@@ -81,6 +81,12 @@ def create_context_menu(island_widget) -> QMenu:
     autostart_action.triggered.connect(toggle_autostart)
     menu.addAction(autostart_action)
 
+    hide_island_action = QAction("Ukryj wyspę, aby kliknąć pod nią", menu)
+    hide_island_action.setCheckable(True)
+    hide_island_action.setChecked(island_widget.is_manually_hidden)
+    hide_island_action.toggled.connect(island_widget.set_manually_hidden)
+    menu.addAction(hide_island_action)
+
     # Opróżnienie półki
     clear_shelf_action = QAction("Wyczyść półkę na pliki", menu)
     clear_shelf_action.triggered.connect(shelf_manager.clear)
@@ -120,7 +126,9 @@ class IslandTrayManager:
 
     def _on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            if self.island.is_expanded:
+            if self.island.is_manually_hidden:
+                self.island.restore_from_tray()
+            elif self.island.is_expanded:
                 self.island.collapse()
             else:
                 self.island.expand()

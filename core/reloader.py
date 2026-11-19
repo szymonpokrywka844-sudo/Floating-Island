@@ -110,6 +110,16 @@ class CodeChangeReloader(QObject):
         self.timer.timeout.connect(self._check_for_changes)
         self.timer.start(1200)
 
+    def pause(self):
+        """Stop watching while the updater replaces source files."""
+        self.timer.stop()
+
+    def resume(self):
+        """Refresh timestamps before watching again after a failed update."""
+        self._scan_files(initial=True)
+        if not self.timer.isActive():
+            self.timer.start(1200)
+
     def _get_all_py_files(self):
         py_files = []
         for sub in self.subdirs:

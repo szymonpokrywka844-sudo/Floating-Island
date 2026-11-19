@@ -153,6 +153,7 @@ class ApplyUpdateWorker(QThread):
 class AutoUpdateManager(QObject):
     update_available = pyqtSignal(dict)
     check_started = pyqtSignal()
+    update_started = pyqtSignal()
     update_status = pyqtSignal(str)
     update_completed = pyqtSignal(bool, str)
 
@@ -191,6 +192,7 @@ class AutoUpdateManager(QObject):
         if self._applying or not self.pending_commit_info:
             return
         self._applying = True
+        self.update_started.emit()
         self.update_status.emit("Pobieranie aktualizacji z GitHub…")
         self.apply_worker = ApplyUpdateWorker(
             self.repo, self.branch, self.pending_commit_info, self

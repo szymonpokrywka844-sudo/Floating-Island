@@ -23,6 +23,7 @@ class FloatingIsland(QWidget):
         self.is_hidden_by_fullscreen = False
         self.is_fullscreen_revealed = False
         self.is_showing_alert = False
+        self.is_manually_hidden = False
         self.active_module: BaseModule = None
 
         # 1. Konfiguracja flag okna Qt
@@ -352,6 +353,42 @@ class FloatingIsland(QWidget):
         self.geo_anim.setStartValue(self.geometry())
         self.geo_anim.setEndValue(target_rect)
         self.geo_anim.start()
+
+    def set_manually_hidden(self, hidden: bool):
+        """Hide the always-on-top window so the underlying browser tab is clickable."""
+        hidden = bool(hidden)
+        if hidden == self.is_manually_hidden:
+            return
+
+        self.is_manually_hidden = hidden
+        self.geo_anim.stop()
+        if hidden:
+            if self.is_expanded:
+                self.is_expanded = False
+                if self.expanded_container:
+                    self.expanded_container.setVisible(False)
+                if self.active_module:
+                    self.active_module.on_collapse()
+            if self.pill_container:
+                self.pill_container.setVisible(True)
+            self.hide()
+            return
+
+        self.is_expanded = False
+        if self.expanded_container:
+            self.expanded_container.setVisible(False)
+        if self.pill_container:
+            self.pill_container.setVisible(True)
+        target = (
+            self._get_hidden_rect() if self.is_hidden_by_fullscreen
+            else self._get_collapsed_rect()
+        )
+        self.setGeometry(target)
+        self.show()
+        self.raise_()
+
+    def restore_from_tray(self):
+        self.set_manually_hidden(False)
 
     def show_alert_banner(self, duration_ms: int = 4200):
         """

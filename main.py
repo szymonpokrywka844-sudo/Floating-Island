@@ -53,8 +53,21 @@ def main():
     updater = AutoUpdateManager(parent=app)
     app._floating_island_updater = updater
 
-    # 2. Watcher kodu: automatyczny restart i usunięcie starej wersji po edycji plików .py
-    reloader = CodeChangeReloader(root_dir)
+    # Watcher kodu jest potrzebny tylko w checkoutcie developerskim.
+    # Instalator nie zawiera .git, a updater sam restartuje aplikację po podmianie plików.
+    reloader = (
+        CodeChangeReloader(root_dir)
+        if os.path.isdir(os.path.join(root_dir, ".git"))
+        else None
+    )
+    if reloader:
+        updater.update_started.connect(reloader.pause)
+
+        def resume_reloader_after_failed_update(success, _message):
+            if not success:
+                reloader.resume()
+
+        updater.update_completed.connect(resume_reloader_after_failed_update)
 
     # 3. Tworzymy powłokę wyspy
     island = FloatingIsland()
