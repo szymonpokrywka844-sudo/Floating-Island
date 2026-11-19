@@ -59,6 +59,15 @@ def get_current_commit():
     return "initial"
 
 
+def save_current_commit(commit_sha, repo=DEFAULT_REPO, branch=DEFAULT_BRANCH):
+    """Persist the installed baseline so a missing marker does not retrigger forever."""
+    path = os.path.join(project_directory(), "version.json")
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as version_file:
+        json.dump({"commit": commit_sha, "repo": repo, "branch": branch}, version_file, indent=2)
+    os.replace(temporary, path)
+
+
 class UpdateWorker(QThread):
     check_finished = pyqtSignal(bool, dict)
 
@@ -84,6 +93,7 @@ class UpdateWorker(QThread):
             }
             local = get_current_commit()
             if local == "initial" and sha:
+                save_current_commit(sha, self.repo, self.branch)
                 self.check_finished.emit(False, info)
             else:
                 self.check_finished.emit(bool(sha and sha != local), info)
