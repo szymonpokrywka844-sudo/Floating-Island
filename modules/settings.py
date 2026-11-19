@@ -3,17 +3,18 @@ Panel ustawien Floating Island.
 Sekcje: Motyw, Pozycja, Przezroczystosc, Autostart, Reset.
 Wszystkie ikony rysowane QPainter - zero emotek, zero obrazkow.
 """
-from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtCore import Qt, QSettings, QUrl
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QSlider, QScrollArea, QFrame
+    QPushButton, QSlider, QScrollArea, QFrame, QLineEdit, QApplication
 )
-from PyQt6.QtGui import QPainter, QColor
+from PyQt6.QtGui import QPainter, QColor, QDesktopServices
 
 from core.theme import theme_manager
 from core import config
 from core.autostart import is_autostart_enabled, set_autostart
 from ui.vector_controls import VectorToggleSwitch
+from core.secret_store import load_github_token, save_github_token
 
 
 # ---------------------------------------------------------------------------
@@ -167,10 +168,20 @@ class SettingsPage(QWidget):
         self._separators.append(sep4)
         self._inner_layout.addWidget(sep4)
 
-        # --- SEKCJA: RESET ---
-        lbl5 = _SectionLabel("Resetowanie")
+        # --- SEKCJA: PRYWATNE AKTUALIZACJE GITHUB ---
+        lbl5 = _SectionLabel("Aktualizacje z prywatnego GitHub")
         self._section_labels.append(lbl5)
         self._inner_layout.addWidget(lbl5)
+        self._build_github_token_section()
+
+        sep5 = _Separator()
+        self._separators.append(sep5)
+        self._inner_layout.addWidget(sep5)
+
+        # --- SEKCJA: RESET ---
+        lbl6 = _SectionLabel("Resetowanie")
+        self._section_labels.append(lbl6)
+        self._inner_layout.addWidget(lbl6)
         self._build_reset_section()
 
         self._inner_layout.addStretch()
@@ -304,6 +315,80 @@ class SettingsPage(QWidget):
         container.setStyleSheet("background: transparent;")
         container.setLayout(row)
         self._inner_layout.addWidget(container)
+
+    def _build_github_token_section(self):
+        description = QLabel(
+            "Token fine-grained dla Floating-Island: Contents = Read-only. "
+            "Jest szyfrowany dla tego konta Windows."
+        )
+        description.setWordWrap(True)
+        description.setStyleSheet(
+            f"color: {theme_manager.text_secondary}; font-size: 10px;"
+        )
+        self._inner_layout.addWidget(description)
+
+        self._github_token_input = QLineEdit()
+        self._github_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._github_token_input.setPlaceholderText(
+            "Token skonfigurowany" if load_github_token() else "github_pat_…"
+        )
+        self._github_token_input.setFixedHeight(28)
+        self._github_token_input.setStyleSheet(
+            f"QLineEdit {{ background: {theme_manager.card_bg}; color: {theme_manager.text_primary}; "
+            f"border: 1px solid {theme_manager.card_border}; border-radius: 5px; padding: 0 7px; }}"
+        )
+        self._inner_layout.addWidget(self._github_token_input)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self._github_token_save = QPushButton("Zapisz token")
+        self._github_token_save.setFixedHeight(26)
+        self._github_token_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._github_token_save.clicked.connect(self._save_github_token)
+        self._github_token_help = QPushButton("Utwórz token")
+        self._github_token_help.setFixedHeight(26)
+        self._github_token_help.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._github_token_help.clicked.connect(lambda: QDesktopServices.openUrl(
+            QUrl("https://github.com/settings/personal-access-tokens/new")
+        ))
+        for button in (self._github_token_save, self._github_token_help):
+            button.setStyleSheet(
+                f"QPushButton {{ background: {theme_manager.card_bg}; color: {theme_manager.text_primary}; "
+                f"border: 1px solid {theme_manager.card_border}; border-radius: 5px; padding: 0 8px; font-size: 10px; }}"
+                f"QPushButton:hover {{ background: {theme_manager.hover_bg}; }}"
+            )
+        self._github_token_status = QLabel(
+            "Token jest zapisany." if load_github_token() else "Brak tokena."
+        )
+        self._github_token_status.setStyleSheet(
+            f"color: {theme_manager.text_secondary}; font-size: 9px;"
+        )
+        row.addWidget(self._github_token_save)
+        row.addWidget(self._github_token_help)
+        row.addWidget(self._github_token_status, 1)
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        container.setLayout(row)
+        self._inner_layout.addWidget(container)
+
+    def _save_github_token(self):
+        token = self._github_token_input.text().strip()
+        try:
+            save_github_token(token)
+            self._github_token_input.clear()
+            self._github_token_input.setPlaceholderText(
+                "Token skonfigurowany" if token else "github_pat_…"
+            )
+            self._github_token_status.setText(
+                "Token zapisany. Sprawdzam aktualizacje…" if token else "Token usunięty."
+            )
+            app = QApplication.instance()
+            updater = getattr(app, "_floating_island_updater", None) if app else None
+            if updater and token:
+                updater.check_for_updates()
+        except Exception as error:
+            self._github_token_status.setText(f"Nie udało się zapisać: {error}")
 
     def _refresh_reset_btn_style(self):
         if hasattr(self, '_btn_reset') and self._btn_reset:
