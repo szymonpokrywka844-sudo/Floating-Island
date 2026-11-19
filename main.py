@@ -67,7 +67,6 @@ def main():
 
     # Zachowaj referencje do komponentów przez cały czas działania Qt.
     app._floating_island_components = (updater, reloader, island, media_module, tray)
-    app._floating_island_updater = updater
 
     # 6. Wyświetlamy wyspę na ekranie
     island.show()

@@ -10,7 +10,6 @@ import zipfile
 
 from PyQt6.QtCore import QObject, QSettings, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QApplication
-from core.secret_store import load_github_token
 
 DEFAULT_REPO = "szymonpokrywka844-sudo/Floating-Island"
 DEFAULT_BRANCH = "main"
@@ -68,17 +67,10 @@ class UpdateWorker(QThread):
         self.repo, self.branch = repo, branch
 
     def run(self):
-        token = load_github_token()
-        if not token:
-            self.check_finished.emit(False, {
-                "error": "Dodaj token GitHub z prawem Contents: Read-only w Ustawieniach."
-            })
-            return
         url = f"https://api.github.com/repos/{self.repo}/commits/{self.branch}"
         request = urllib.request.Request(url, headers={
             "User-Agent": "FloatingIsland-Updater",
             "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
             "X-GitHub-Api-Version": "2022-11-28",
         })
         try:
@@ -108,15 +100,11 @@ class ApplyUpdateWorker(QThread):
 
     def run(self):
         try:
-            token = load_github_token()
-            if not token:
-                raise RuntimeError("Dodaj token GitHub z prawem Contents: Read-only w Ustawieniach.")
             root = project_directory()
             url = f"https://api.github.com/repos/{self.repo}/zipball/{self.branch}"
             request = urllib.request.Request(url, headers={
                 "User-Agent": "FloatingIsland-Updater",
                 "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {token}",
                 "X-GitHub-Api-Version": "2022-11-28",
             })
             with urllib.request.urlopen(request, timeout=60) as response:
