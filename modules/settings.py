@@ -5,7 +5,7 @@ Wszystkie ikony rysowane QPainter - zero emotek, zero obrazkow.
 """
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QSlider, QScrollArea, QFrame
 )
 from PyQt6.QtGui import QPainter, QColor
