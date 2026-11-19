@@ -13,7 +13,7 @@ AppId={{8B17FA3C-91B4-4B42-9908-168532F42D1C}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 PrivilegesRequired=lowest
@@ -41,6 +41,7 @@ Source: "main.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Uruchom_w_tle.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "island_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "version.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "core\*"; DestDir: "{app}\core"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__,*.pyc"
 Source: "ui\*"; DestDir: "{app}\ui"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__,*.pyc"
 Source: "modules\*"; DestDir: "{app}\modules"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__,*.pyc"
@@ -68,7 +69,7 @@ procedure KillRunningApp();
 var
   ResultCode: Integer;
 begin
-  Exec('powershell.exe', '-NoProfile -Command "if (Test-Path ''$env:TEMP\floating_island.pid'') { $p = Get-Content ''$env:TEMP\floating_island.pid''; Stop-Process -Id $p -Force -ErrorAction SilentlyContinue; Remove-Item ''$env:TEMP\floating_island.pid'' -ErrorAction SilentlyContinue }"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('powershell.exe', '-NoProfile -Command "if (Test-Path ''$env:TEMP\floating_island.pid'') { $idText = (Get-Content ''$env:TEMP\floating_island.pid'' -Raw).Trim(); if ($idText -match ''^\d+$'') { $id = [int]$idText; $p = Get-CimInstance Win32_Process -Filter (''ProcessId = '' + $id); if ($p -and ($p.Name -eq ''python.exe'' -or $p.Name -eq ''pythonw.exe'') -and $p.CommandLine -match ''(?i)Floating island.*main\.py'') { Get-CimInstance Win32_Process -Filter (''ParentProcessId = '' + $id) | Where-Object { $_.Name -eq ''powershell.exe'' -and $_.CommandLine -match ''GlobalSystemMediaTransportControlsSessionManager|UserNotificationListener'' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Stop-Process -Id $id -Force -ErrorAction SilentlyContinue } }; Remove-Item ''$env:TEMP\floating_island.pid'' -ErrorAction SilentlyContinue }"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 function InitializeSetup(): Boolean;

@@ -5,18 +5,17 @@ Wydajny, natywny Win32 TerminateProcess + stabilny polling mtime.
 """
 import os
 import sys
-import ctypes
 import subprocess
 from PyQt6.QtCore import QObject, QTimer
+from PyQt6.QtWidgets import QApplication
 
-PROCESS_TERMINATE = 0x0001
 PID_FILE = os.path.join(os.environ.get("TEMP", "C:/Windows/Temp"), "floating_island.pid")
 
 
 def kill_previous_instances():
     """
-    Zamyka poprzednio działającą instancję Floating Island przez natywne Win32 API.
-    Działa błyskawicznie (0 ms), bez użycia PowerShell i bez ryzyka kolizji.
+    Zamyka poprzednią instancję tylko wtedy, gdy PID nadal należy do tego projektu.
+    To zabezpiecza przed zabiciem obcego procesu po ponownym użyciu numeru PID.
     """
     current_pid = os.getpid()
 
@@ -25,11 +24,7 @@ def kill_previous_instances():
             with open(PID_FILE, "r", encoding="utf-8") as f:
                 old_pid = int(f.read().strip())
             if old_pid != current_pid and old_pid > 0:
-                kernel32 = ctypes.windll.kernel32
-                h_proc = kernel32.OpenProcess(PROCESS_TERMINATE, False, old_pid)
-                if h_proc:
-                    kernel32.TerminateProcess(h_proc, 0)
-                    kernel32.CloseHandle(h_proc)
+                _terminate_if_this_app(old_pid)
         except Exception:
             pass
 
@@ -42,6 +37,40 @@ def _write_current_pid(pid: int):
             f.write(str(pid))
     except Exception:
         pass
+
+
+def register_current_instance():
+    """Rejestruje proces, który zastępuje poprzednią instancję przy hot-reloadzie."""
+    _write_current_pid(os.getpid())
+
+
+def _terminate_if_this_app(pid: int):
+    main_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "main.py"))
+    escaped_main = main_py.replace("'", "''")
+    command = (
+        f"$p = Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}'; "
+        f"$expected = '{escaped_main}'; "
+        "if ($p -and ($p.Name -eq 'python.exe' -or $p.Name -eq 'pythonw.exe') "
+        "-and $p.CommandLine -and $p.CommandLine.IndexOf($expected, "
+        "[System.StringComparison]::OrdinalIgnoreCase) -ge 0) { "
+        f"Get-CimInstance Win32_Process -Filter 'ParentProcessId = {pid}' | "
+        "Where-Object { $_.Name -eq 'powershell.exe' -and $_.CommandLine -match "
+        "'GlobalSystemMediaTransportControlsSessionManager|UserNotificationListener' } | "
+        "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; "
+        "Start-Sleep -Milliseconds 100; "
+        f"Stop-Process -Id {pid} -Force }}"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", command],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
 
 
 def cleanup_stale_pycache(root_dir: str):
@@ -138,12 +167,20 @@ class CodeChangeReloader(QObject):
         cleanup_stale_pycache(self.root_dir)
 
         try:
+            child_env = os.environ.copy()
+            child_env["FLOATING_ISLAND_REPLACEMENT"] = "1"
             subprocess.Popen(
                 [exe_to_use, main_py],
-                cwd=self.root_dir
+                cwd=self.root_dir,
+                env=child_env,
             )
         except Exception as e:
             print(f"[Floating Island] Błąd restartu: {e}")
+            return
 
-        # Natychmiastowe zakończenie starego procesu
-        os._exit(0)
+        # Zamknięcie przez event loop uruchamia procedury sprzątające wątki i subprocessy.
+        app = QApplication.instance()
+        if app:
+            app.quit()
+        else:
+            os._exit(0)

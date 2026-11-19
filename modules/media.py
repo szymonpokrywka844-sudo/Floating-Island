@@ -9,7 +9,7 @@ import os
 from PyQt6.QtCore import Qt, QTimer, QTime, QDate, QSettings, QUrl, QFileInfo, QSize
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QStackedWidget,
+    QApplication, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QStackedWidget,
     QPushButton, QScrollArea, QFrame, QFileDialog, QFileIconProvider
 )
 from modules.base import BaseModule
@@ -17,6 +17,7 @@ from core.media_service import (
     MediaMonitorWorker, media_play_pause, media_next, media_prev
 )
 from core.notifications_service import NotificationMonitorWorker
+from core.privacy_monitor import PrivacyMonitorWorker
 from ui.vector_controls import (
     WaveformVisualizer, VectorIconButton, LivingEyesWidget,
     ShelfBadgeWidget, VectorCloseButton, AppIconWidget, VectorGearButton
@@ -32,6 +33,8 @@ class MediaModule(BaseModule):
         self.island = None
         self.current_media = {"has_media": False, "status": "Stopped"}
         self.is_active_player = False
+        self._media_subtitle = ""
+        self.privacy_activity = {"microphone": [], "camera": [], "location": [], "screen": []}
         self.recent_notifications = []
 
         # Elementy pigułki
@@ -73,6 +76,8 @@ class MediaModule(BaseModule):
         self.notifs_layout = None
         self.notifs_empty_label = None
         self.notifs_count_label = None
+        self.privacy_status_label = None
+        self.privacy_mini_label = None
 
         # Zegar systemowy
         self.clock_timer = QTimer(self)
@@ -88,6 +93,15 @@ class MediaModule(BaseModule):
         self.notif_worker = NotificationMonitorWorker(parent=self)
         self.notif_worker.notification_arrived.connect(self._on_new_notification)
         self.notif_worker.start()
+
+        self.privacy_worker = PrivacyMonitorWorker(parent=self)
+        self.privacy_worker.activity_changed.connect(self._on_privacy_activity)
+        self.privacy_worker.start()
+        app = QApplication.instance()
+        if app:
+            app.aboutToQuit.connect(self.worker.stop)
+            app.aboutToQuit.connect(self.notif_worker.stop)
+            app.aboutToQuit.connect(self.privacy_worker.stop)
 
         # Subskrypcja zmian na półce
         shelf_manager.subscribe(self._on_shelf_updated)
@@ -251,6 +265,11 @@ class MediaModule(BaseModule):
         info_col.addWidget(self.standby_date_label)
         info_col.addLayout(badge_row)
 
+        self.privacy_status_label = QLabel(standby_page)
+        self.privacy_status_label.setWordWrap(True)
+        self.privacy_status_label.setStyleSheet("color: #8E8E93; font-size: 10px;")
+        info_col.addWidget(self.privacy_status_label)
+
         st_layout.addWidget(self.large_eyes)
         st_layout.addLayout(info_col)
         st_layout.addStretch()
@@ -275,6 +294,10 @@ class MediaModule(BaseModule):
 
         top_row.addWidget(self.exp_badge)
         top_row.addWidget(self.exp_status)
+        self.privacy_mini_label = QLabel(player_page)
+        self.privacy_mini_label.setStyleSheet("color: #FF9F0A; font-size: 9px; font-weight: bold;")
+        self.privacy_mini_label.setVisible(False)
+        top_row.addWidget(self.privacy_mini_label)
         top_row.addStretch()
         pl_layout.addLayout(top_row)
 
@@ -470,6 +493,7 @@ class MediaModule(BaseModule):
 
         # Zaaplikuj biezacy motyw do wszystkich nowo powstalych kontrolek
         self._apply_theme()
+        self._apply_privacy_activity()
         return container
 
     # -------------------------------------------------------------
@@ -555,6 +579,65 @@ class MediaModule(BaseModule):
         if self.pill_alert_widget and self.pill_normal_widget:
             self.pill_alert_widget.setVisible(False)
             self.pill_normal_widget.setVisible(True)
+
+    @staticmethod
+    def _looks_like_communicator(app_name: str) -> bool:
+        normalized = "".join(ch for ch in app_name.lower() if ch.isalnum())
+        return any(token in normalized for token in (
+            "discord", "messenger", "teams", "zoom", "skype", "whatsapp",
+            "telegram", "signal", "slack", "webex", "meet", "facetime",
+        ))
+
+    def _on_privacy_activity(self, activity: dict):
+        self.privacy_activity = activity
+        self._apply_privacy_activity()
+
+    def _apply_privacy_activity(self):
+        lines = []
+        microphone_apps = self.privacy_activity.get("microphone", [])
+        camera_apps = self.privacy_activity.get("camera", [])
+        handled_microphone = set()
+
+        for app_name in camera_apps:
+            if app_name in microphone_apps and self._looks_like_communicator(app_name):
+                lines.append(f"Rozmowa wideo · {app_name}")
+                handled_microphone.add(app_name)
+            else:
+                lines.append(f"Kamera aktywna · {app_name}")
+
+        for app_name in microphone_apps:
+            if app_name not in handled_microphone:
+                prefix = "Rozmowa / mikrofon" if self._looks_like_communicator(app_name) else "Mikrofon aktywny"
+                lines.append(f"{prefix} · {app_name}")
+
+        for app_name in self.privacy_activity.get("location", []):
+            lines.append(f"Lokalizacja aktywna · {app_name}")
+        for app_name in self.privacy_activity.get("screen", []):
+            lines.append(f"Nagrywanie / udostępnianie ekranu · {app_name}")
+
+        if self.privacy_status_label:
+            self.privacy_status_label.setText(
+                "\n".join(lines) if lines else "Brak wykrytego użycia mikrofonu, kamery, lokalizacji i ekranu."
+            )
+
+        compact = ""
+        for key, prefix in (("screen", "EKRAN"), ("camera", "KAMERA"), ("microphone", "MIC"), ("location", "LOK")):
+            apps = self.privacy_activity.get(key, [])
+            if apps:
+                app_label = apps[0] if len(apps[0]) <= 7 else apps[0][:6] + "…"
+                compact = f"{prefix} · {app_label}"
+                break
+        if self.pill_subtitle:
+            self.pill_subtitle.setToolTip("\n".join(lines) if lines else "Brak aktywnego użycia urządzeń")
+            self.pill_subtitle.setText(compact or (self._media_subtitle if self.is_active_player else "Czuwanie"))
+        if self.privacy_mini_label:
+            self.privacy_mini_label.setText(compact)
+            self.privacy_mini_label.setToolTip("\n".join(lines) if lines else "Brak aktywnego użycia urządzeń")
+            self.privacy_mini_label.setVisible(bool(compact))
+        if self.privacy_status_label:
+            self.privacy_status_label.setStyleSheet(
+                f"color: {theme_manager.text_secondary}; font-size: 10px;"
+            )
 
     def _refresh_notifications_ui(self):
         count = len(self.recent_notifications)
@@ -792,6 +875,7 @@ class MediaModule(BaseModule):
 
         self._refresh_shortcuts()
         self._refresh_notifications_ui()
+        self._apply_privacy_activity()
 
     def add_shortcut_path(self, path: str):
         """Dodaje skrót lub aplikację do listy i zapisuje do konfiguracji."""
@@ -1024,9 +1108,9 @@ class MediaModule(BaseModule):
             if self.pill_title:
                 clean_title = title[:15] + "…" if len(title) > 15 else title
                 self.pill_title.setText(clean_title)
-            if self.pill_subtitle:
-                clean_artist = artist[:12] + "…" if len(artist) > 12 else artist
-                self.pill_subtitle.setText(clean_artist if clean_artist else badge_text)
+            clean_artist = artist[:12] + "…" if len(artist) > 12 else artist
+            self._media_subtitle = clean_artist if clean_artist else badge_text
+            self._apply_privacy_activity()
 
             if self.exp_badge:
                 self.exp_badge.setText(badge_text)
@@ -1062,7 +1146,8 @@ class MediaModule(BaseModule):
             if self.pill_title:
                 self.pill_title.setText(QTime.currentTime().toString("HH:mm"))
             if self.pill_subtitle:
-                self.pill_subtitle.setText("Czuwanie")
+                self._media_subtitle = ""
+                self._apply_privacy_activity()
             if self.exp_stack and self.exp_stack.currentIndex() not in (2, 3):
                 self.exp_stack.setCurrentIndex(0)
                 self.tab_media_btn.setText("STATUS")

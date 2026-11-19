@@ -7,6 +7,7 @@ import ctypes
 import json
 import subprocess
 import sys
+import threading
 from PyQt6.QtCore import QThread, pyqtSignal
 
 # Kody wirtualnych klawiszy multimedialnych Win32
@@ -108,6 +109,7 @@ class MediaMonitorWorker(QThread):
         super().__init__(parent)
         self.process = None
         self.running = True
+        self._process_lock = threading.Lock()
 
     def run(self):
         startupinfo = subprocess.STARTUPINFO()
@@ -115,7 +117,7 @@ class MediaMonitorWorker(QThread):
         startupinfo.wShowWindow = 0  # Ukryte okno PowerShell
 
         try:
-            self.process = subprocess.Popen(
+            process = subprocess.Popen(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", POWERSHELL_DAEMON_SCRIPT],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
@@ -126,8 +128,15 @@ class MediaMonitorWorker(QThread):
                 bufsize=1
             )
 
-            while self.running and self.process and self.process.poll() is None:
-                line = self.process.stdout.readline()
+            with self._process_lock:
+                self.process = process
+                should_run = self.running
+            if not should_run:
+                self._terminate_process(process)
+                return
+
+            while self.running and process.poll() is None:
+                line = process.stdout.readline()
                 if line:
                     line = line.strip()
                     if line.startswith("{") and line.endswith("}"):
@@ -138,13 +147,25 @@ class MediaMonitorWorker(QThread):
                             pass
         except Exception as e:
             print(f"[MediaWorker Error] {e}")
+        finally:
+            with self._process_lock:
+                self.process = None
+
+    @staticmethod
+    def _terminate_process(process):
+        if not process or process.poll() is not None:
+            return
+        try:
+            process.terminate()
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        except Exception:
+            pass
 
     def stop(self):
         self.running = False
-        if self.process:
-            try:
-                self.process.terminate()
-            except Exception:
-                pass
-            self.process = None
-        self.wait(1000)
+        with self._process_lock:
+            process = self.process
+        self._terminate_process(process)
+        self.wait(3000)
