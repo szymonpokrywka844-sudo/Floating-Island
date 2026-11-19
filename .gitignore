@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.pid
+installer_output/
+.vscode/
+.idea/
