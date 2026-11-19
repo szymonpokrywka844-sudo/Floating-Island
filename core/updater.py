@@ -11,7 +11,7 @@ import zipfile
 from PyQt6.QtCore import QObject, QSettings, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
-DEFAULT_REPO = "szymonpokrywka42-spec/Floating-Island"
+DEFAULT_REPO = "szymonpokrywka844-sudo/Floating-Island"
 DEFAULT_BRANCH = "main"
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
