@@ -27,16 +27,69 @@ def send_media_key(vk_code: int):
         print(f"[MediaKey Error] {err}")
 
 
+def _send_smtc_command(action: str):
+    """Control the current Windows media session without sending media keys."""
+    operations = {
+        "toggle": "$session.TryTogglePlayPauseAsync()",
+        "next": "$session.TrySkipNextAsync()",
+        "previous": "$session.TrySkipPreviousAsync()",
+    }
+    operation = operations.get(action)
+    if not operation:
+        return
+
+    script = r'''
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$asTaskGeneric = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+    $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
+}[0]
+function Await-WinRT($asyncOp, $type) {
+    $method = $asTaskGeneric.MakeGenericMethod($type)
+    $task = $method.Invoke($null, @($asyncOp))
+    $task.Wait()
+    return $task.Result
+}
+[Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager,Windows.Media.Control,ContentType=WindowsRuntime] | Out-Null
+$managerOp = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()
+$manager = Await-WinRT $managerOp ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
+$session = $manager.GetCurrentSession()
+if (-not $session) {
+    $sessions = $manager.GetSessions()
+    if ($sessions.Count -gt 0) { $session = $sessions[0] }
+}
+if ($session) {
+    $operation = __OPERATION__
+    $null = Await-WinRT $operation ([System.Boolean])
+}
+'''.replace("__OPERATION__", operation)
+
+    try:
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            startupinfo=startupinfo,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception as error:
+        print(f"[SMTC Command Error] {error}")
+
+
 def media_play_pause():
-    send_media_key(VK_MEDIA_PLAY_PAUSE)
+    _send_smtc_command("toggle")
 
 
 def media_next():
-    send_media_key(VK_MEDIA_NEXT_TRACK)
+    _send_smtc_command("next")
 
 
 def media_prev():
-    send_media_key(VK_MEDIA_PREV_TRACK)
+    _send_smtc_command("previous")
 
 
 # Stały skrypt-demon PowerShell nasłuchujący sesji SMTC w jednej pętli (0% CPU)

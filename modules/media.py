@@ -34,6 +34,10 @@ class MediaModule(BaseModule):
         self.current_media = {"has_media": False, "status": "Stopped"}
         self.is_active_player = False
         self._media_subtitle = ""
+        self.media_session_lost_timer = QTimer(self)
+        self.media_session_lost_timer.setSingleShot(True)
+        self.media_session_lost_timer.setInterval(60000)
+        self.media_session_lost_timer.timeout.connect(self._leave_player_if_session_lost)
         self.privacy_activity = {"microphone": [], "camera": [], "location": [], "screen": []}
         self.recent_notifications = []
 
@@ -1056,15 +1060,32 @@ class MediaModule(BaseModule):
 
     def _on_media_update(self, data: dict):
         self.current_media = data
-        has_media = data.get("has_media", False)
-        status = data.get("status", "Stopped")
-        is_playing = (has_media and status == "Playing")
+        has_session = bool(data.get("has_media", False))
+        status = str(data.get("status", "Stopped"))
+        is_playing = has_session and status.casefold() == "playing"
 
-        if is_playing != self.is_active_player:
-            self.is_active_player = is_playing
-            self._switch_mode(is_playing)
+        if has_session:
+            self.media_session_lost_timer.stop()
+            if not self.is_active_player:
+                self.is_active_player = True
+                self._switch_mode(True)
+        elif self.is_active_player:
+            # Browser SMTC can briefly disappear while paused; keep its controls available.
+            if not self.media_session_lost_timer.isActive():
+                self.media_session_lost_timer.start()
+            if self.pill_wave:
+                self.pill_wave.set_playing(False)
+            if self.exp_wave:
+                self.exp_wave.set_playing(False)
+            if self.exp_status:
+                self.exp_status.setText("Wstrzymano")
+            if self.btn_play_pause:
+                self.btn_play_pause.set_icon_type(VectorIconButton.TYPE_PLAY)
+            return
+        else:
+            return
 
-        if is_playing:
+        if has_session:
             title = data.get("title", "Nieznany utwór")
             artist = data.get("artist", "")
             source = data.get("source", "").lower()
@@ -1099,10 +1120,10 @@ class MediaModule(BaseModule):
                 accent_color = "#0078D7"
 
             if self.pill_wave:
-                self.pill_wave.set_playing(True)
+                self.pill_wave.set_playing(is_playing)
                 self.pill_wave.set_accent_color(accent_color)
             if self.exp_wave:
-                self.exp_wave.set_playing(True)
+                self.exp_wave.set_playing(is_playing)
                 self.exp_wave.set_accent_color(accent_color)
 
             if self.pill_title:
@@ -1119,14 +1140,27 @@ class MediaModule(BaseModule):
                     "font-weight: bold; font-size: 9px; padding: 2px 7px; border-radius: 4px;"
                 )
             if self.exp_status:
-                self.exp_status.setText("Odtwarzanie")
+                if is_playing:
+                    self.exp_status.setText("Odtwarzanie")
+                elif status.casefold() == "stopped":
+                    self.exp_status.setText("Zatrzymano")
+                else:
+                    self.exp_status.setText("Wstrzymano")
             if self.exp_title:
                 full_display = title if len(title) <= 40 else title[:38] + "…"
                 self.exp_title.setText(full_display)
             if self.exp_artist:
                 self.exp_artist.setText(artist if artist else "Brak informacji o wykonawcy")
             if self.btn_play_pause:
-                self.btn_play_pause.set_icon_type(VectorIconButton.TYPE_PAUSE)
+                self.btn_play_pause.set_icon_type(
+                    VectorIconButton.TYPE_PAUSE if is_playing else VectorIconButton.TYPE_PLAY
+                )
+
+    def _leave_player_if_session_lost(self):
+        if self.current_media.get("has_media", False) or not self.is_active_player:
+            return
+        self.is_active_player = False
+        self._switch_mode(False)
 
     def _switch_mode(self, to_player: bool):
         if to_player:
