@@ -1070,8 +1070,8 @@ class MediaModule(BaseModule):
                 # The browser can keep an ended tab's SMTC session registered briefly.
                 self.media_session_lost_timer.start(6000)
             elif not is_playing:
-                # Pausing keeps the player available long enough to resume from the island.
-                self.media_session_lost_timer.start(180000)
+                # A closed browser tab can remain reported as paused; keep a short resume window.
+                self.media_session_lost_timer.start(15000)
             if not self.is_active_player:
                 self.is_active_player = True
                 self._switch_mode(True)
