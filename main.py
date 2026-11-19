@@ -51,6 +51,7 @@ def main():
 
     # Automatyczne aktualizacje z gałęzi GitHub `main`.
     updater = AutoUpdateManager(parent=app)
+    app._floating_island_updater = updater
 
     # 2. Watcher kodu: automatyczny restart i usunięcie starej wersji po edycji plików .py
     reloader = CodeChangeReloader(root_dir)

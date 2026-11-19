@@ -152,6 +152,7 @@ class ApplyUpdateWorker(QThread):
 
 class AutoUpdateManager(QObject):
     update_available = pyqtSignal(dict)
+    check_started = pyqtSignal()
     update_status = pyqtSignal(str)
     update_completed = pyqtSignal(bool, str)
 
@@ -172,6 +173,7 @@ class AutoUpdateManager(QObject):
         if self._checking or self._applying:
             return
         self._checking = True
+        self.check_started.emit()
         self.worker = UpdateWorker(self.repo, self.branch, self)
         self.worker.check_finished.connect(self._on_check_finished)
         self.worker.start()

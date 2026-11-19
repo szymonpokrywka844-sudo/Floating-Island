@@ -167,10 +167,20 @@ class SettingsPage(QWidget):
         self._separators.append(sep4)
         self._inner_layout.addWidget(sep4)
 
-        # --- SEKCJA: RESET ---
-        lbl5 = _SectionLabel("Resetowanie")
+        # --- SEKCJA: AKTUALIZACJE ---
+        lbl5 = _SectionLabel("Aktualizacje aplikacji")
         self._section_labels.append(lbl5)
         self._inner_layout.addWidget(lbl5)
+        self._build_update_section()
+
+        sep5 = _Separator()
+        self._separators.append(sep5)
+        self._inner_layout.addWidget(sep5)
+
+        # --- SEKCJA: RESET ---
+        lbl6 = _SectionLabel("Resetowanie")
+        self._section_labels.append(lbl6)
+        self._inner_layout.addWidget(lbl6)
         self._build_reset_section()
 
         self._inner_layout.addStretch()
@@ -285,6 +295,71 @@ class SettingsPage(QWidget):
         container.setStyleSheet("background: transparent;")
         container.setLayout(row)
         self._inner_layout.addWidget(container)
+
+    def _build_update_section(self):
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+
+        self._check_updates_button = QPushButton("Sprawdź aktualizacje")
+        self._check_updates_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._check_updates_button.setFixedHeight(28)
+        self._check_updates_button.clicked.connect(self._check_for_updates)
+        row.addWidget(self._check_updates_button)
+
+        self._update_status_label = QLabel("Automatyczne sprawdzanie co 15 minut")
+        self._update_status_label.setWordWrap(True)
+        self._update_status_label.setStyleSheet(
+            f"color: {theme_manager.text_secondary}; font-size: 10px;"
+        )
+        row.addWidget(self._update_status_label, 1)
+
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        container.setLayout(row)
+        self._inner_layout.addWidget(container)
+
+        app = QApplication.instance()
+        self._updater = getattr(app, "_floating_island_updater", None) if app else None
+        if self._updater:
+            self._updater.check_started.connect(self._on_update_check_started)
+            self._updater.update_available.connect(self._on_update_available)
+            self._updater.update_status.connect(self._set_update_status)
+            self._updater.update_completed.connect(self._on_update_completed)
+
+    def _check_for_updates(self):
+        if not self._updater:
+            self._set_update_status("Updater nie został uruchomiony.")
+            return
+        self._updater.check_for_updates()
+
+    def _on_update_check_started(self):
+        self._set_update_status("Sprawdzam GitHub…")
+
+    def _on_update_available(self, info):
+        short_sha = info.get("short_sha", "")
+        message = info.get("message", "").strip()
+        details = f" ({message})" if message else ""
+        self._set_update_status(f"Dostępna aktualizacja {short_sha}{details}. Pobieram…")
+
+    def _on_update_completed(self, success, message):
+        self._set_update_status(message)
+
+    def _set_update_status(self, message):
+        if not hasattr(self, "_update_status_label"):
+            return
+        text = str(message)
+        lowered = text.casefold()
+        if "aktualna" in lowered or "brak aktualizacji" in lowered:
+            color = "#30A46C"
+        elif "nie powiod" in lowered or "błąd" in lowered or "error" in lowered:
+            color = "#E5484D"
+        elif "dostępna" in lowered or "pobieram" in lowered or "sprawdzam" in lowered:
+            color = "#0A84FF"
+        else:
+            color = theme_manager.text_secondary
+        self._update_status_label.setText(text)
+        self._update_status_label.setStyleSheet(f"color: {color}; font-size: 10px;")
 
     def _build_reset_section(self):
         row = QHBoxLayout()
