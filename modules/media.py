@@ -36,7 +36,7 @@ class MediaModule(BaseModule):
         self._media_subtitle = ""
         self.media_session_lost_timer = QTimer(self)
         self.media_session_lost_timer.setSingleShot(True)
-        self.media_session_lost_timer.setInterval(60000)
+        self.media_session_lost_timer.setInterval(10000)
         self.media_session_lost_timer.timeout.connect(self._leave_player_if_session_lost)
         self.privacy_activity = {"microphone": [], "camera": [], "location": [], "screen": []}
         self.recent_notifications = []
@@ -1066,13 +1066,19 @@ class MediaModule(BaseModule):
 
         if has_session:
             self.media_session_lost_timer.stop()
+            if status.casefold() == "stopped":
+                # The browser can keep an ended tab's SMTC session registered briefly.
+                self.media_session_lost_timer.start(6000)
+            elif not is_playing:
+                # Pausing keeps the player available long enough to resume from the island.
+                self.media_session_lost_timer.start(180000)
             if not self.is_active_player:
                 self.is_active_player = True
                 self._switch_mode(True)
         elif self.is_active_player:
-            # Browser SMTC can briefly disappear while paused; keep its controls available.
+            # Keep the last track visible briefly while the browser removes its SMTC session.
             if not self.media_session_lost_timer.isActive():
-                self.media_session_lost_timer.start()
+                self.media_session_lost_timer.start(10000)
             if self.pill_wave:
                 self.pill_wave.set_playing(False)
             if self.exp_wave:
@@ -1157,8 +1163,12 @@ class MediaModule(BaseModule):
                 )
 
     def _leave_player_if_session_lost(self):
-        if self.current_media.get("has_media", False) or not self.is_active_player:
+        if not self.is_active_player:
             return
+        if self.current_media.get("has_media", False):
+            status = str(self.current_media.get("status", "")).casefold()
+            if status not in {"stopped", "paused"}:
+                return
         self.is_active_player = False
         self._switch_mode(False)
 
