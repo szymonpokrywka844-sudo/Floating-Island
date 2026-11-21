@@ -544,7 +544,7 @@ class FloatingIsland(QWidget):
 
     def _get_collapsed_width(self) -> int:
         """Size the pill from visible contents so hidden widgets leave no blank space."""
-        if not self.pill_container:
+        if not getattr(self, "pill_container", None):
             return config.COLLAPSED_WIDTH
         layout = self.pill_container.layout()
         if not layout:
