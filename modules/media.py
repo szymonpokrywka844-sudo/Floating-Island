@@ -715,6 +715,11 @@ class MediaModule(BaseModule):
         self.bluetooth_devices.sort(key=lambda item: self._bluetooth_device_priority(item["name"]))
         if self.pill_bluetooth_badge:
             self.pill_bluetooth_badge.set_devices(self.bluetooth_devices)
+            self._schedule_pill_geometry_refresh()
+
+    def _schedule_pill_geometry_refresh(self):
+        if self.island and hasattr(self.island, "refresh_collapsed_geometry"):
+            QTimer.singleShot(0, self.island.refresh_collapsed_geometry)
 
     @staticmethod
     def _bluetooth_device_priority(name):
@@ -777,6 +782,7 @@ class MediaModule(BaseModule):
             self.privacy_status_label.setStyleSheet(
                 f"color: {theme_manager.text_secondary}; font-size: 10px;"
             )
+        self._schedule_pill_geometry_refresh()
 
     def _refresh_notifications_ui(self):
         count = len(self.recent_notifications)
@@ -1170,6 +1176,7 @@ class MediaModule(BaseModule):
 
         if self.pill_shelf_badge:
             self.pill_shelf_badge.set_count(count)
+            self._schedule_pill_geometry_refresh()
 
         if self.shelf_count_label:
             self.shelf_count_label.setText(f"Zapisane pliki: {count}" if count > 0 else "Półka jest pusta")
@@ -1596,3 +1603,4 @@ class MediaModule(BaseModule):
             if self.exp_stack and self.exp_stack.currentIndex() not in (2, 3):
                 self.exp_stack.setCurrentIndex(0)
                 self.tab_media_btn.setText("STATUS")
+        self._schedule_pill_geometry_refresh()

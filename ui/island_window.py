@@ -122,6 +122,7 @@ class FloatingIsland(QWidget):
 
         module.request_expand.connect(self.expand)
         module.request_collapse.connect(self.collapse)
+        QTimer.singleShot(0, self.refresh_collapsed_geometry)
 
     # ==========================================================
     # OBSŁUGA DRAG & DROP (DROP SHELF)
@@ -533,12 +534,49 @@ class FloatingIsland(QWidget):
         )
 
     def _get_collapsed_rect(self) -> QRect:
+        width = self._get_collapsed_width()
         return QRect(
-            self.screen_center_x - config.COLLAPSED_WIDTH // 2,
+            self.screen_center_x - width // 2,
             self.screen_top_y,
-            config.COLLAPSED_WIDTH,
+            width,
             config.COLLAPSED_HEIGHT
         )
+
+    def _get_collapsed_width(self) -> int:
+        """Size the pill from visible contents so hidden widgets leave no blank space."""
+        if not self.pill_container:
+            return config.COLLAPSED_WIDTH
+        layout = self.pill_container.layout()
+        if not layout:
+            return config.COLLAPSED_WIDTH
+        layout.activate()
+        normal = getattr(self.active_module, "pill_normal_widget", None)
+        normal_layout = normal.layout() if normal else None
+        if normal_layout:
+            normal_layout.activate()
+        content_width = self.pill_container.sizeHint().width()
+        margins = self.main_layout.contentsMargins()
+        width = max(100, content_width + margins.left() + margins.right())
+        screen_width = self.current_screen.availableGeometry().width()
+        return min(width, max(100, screen_width - 24))
+
+    def refresh_collapsed_geometry(self):
+        """Recalculate the collapsed window after a pill widget appears or disappears."""
+        if self.is_expanded or not self.isVisible():
+            return
+        target = (
+            self._get_hidden_rect()
+            if self.is_hidden_by_fullscreen and not self.is_fullscreen_revealed
+            else self._get_collapsed_rect()
+        )
+        if target == self.geometry():
+            return
+        self.geo_anim.stop()
+        self.geo_anim.setDuration(160)
+        self.geo_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.geo_anim.setStartValue(self.geometry())
+        self.geo_anim.setEndValue(target)
+        self.geo_anim.start()
 
     def _get_expanded_rect(self) -> QRect:
         return QRect(
@@ -549,10 +587,11 @@ class FloatingIsland(QWidget):
         )
 
     def _get_hidden_rect(self) -> QRect:
+        width = self._get_collapsed_width()
         return QRect(
-            self.screen_center_x - config.COLLAPSED_WIDTH // 2,
+            self.screen_center_x - width // 2,
             self.screen_raw_top_y - config.COLLAPSED_HEIGHT + self.PEEK_VISIBLE_HEIGHT,
-            config.COLLAPSED_WIDTH,
+            width,
             config.COLLAPSED_HEIGHT
         )
 
