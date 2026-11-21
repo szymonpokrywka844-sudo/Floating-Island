@@ -8,15 +8,32 @@ import sys
 import tempfile
 import traceback
 
+MAX_ERROR_LOG_BYTES = 1024 * 1024
+MAX_ERROR_ENTRY_BYTES = 256 * 1024
+
 # Zapisuj ewentualne nieobsłużone wyjątki do pliku error.log
 def _handle_unhandled_exception(exc_type, exc_value, exc_traceback):
     log_root = os.path.join(os.environ.get("LOCALAPPDATA", tempfile.gettempdir()), "FloatingIsland")
     try:
         os.makedirs(log_root, exist_ok=True)
         log_path = os.path.join(log_root, "error.log")
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write("=" * 50 + "\n")
-            traceback.print_exception(exc_type, exc_value, exc_traceback, file=f)
+        backup_path = log_path + ".1"
+        entry = "=" * 50 + "\n" + "".join(
+            traceback.format_exception(exc_type, exc_value, exc_traceback)
+        )
+        entry_bytes = entry.encode("utf-8", errors="replace")
+        if len(entry_bytes) > MAX_ERROR_ENTRY_BYTES:
+            entry_bytes = entry_bytes[-MAX_ERROR_ENTRY_BYTES:]
+        current_size = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+        if current_size + len(entry_bytes) > MAX_ERROR_LOG_BYTES:
+            try:
+                os.remove(backup_path)
+            except FileNotFoundError:
+                pass
+            if os.path.exists(log_path):
+                os.replace(log_path, backup_path)
+        with open(log_path, "ab") as f:
+            f.write(entry_bytes)
     except OSError:
         traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stderr)
     sys.__excepthook__(exc_type, exc_value, exc_traceback)
@@ -33,6 +50,7 @@ from ui.island_window import FloatingIsland
 from ui.tray_manager import IslandTrayManager
 from modules.media import MediaModule
 from core.updater import AutoUpdateManager
+from core.app_icon import create_app_icon
 
 
 def main():
@@ -48,6 +66,8 @@ def main():
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    app_icon = create_app_icon()
+    app.setWindowIcon(app_icon)
 
     # Automatyczne aktualizacje z gałęzi GitHub `main`.
     updater = AutoUpdateManager(parent=app)
@@ -71,6 +91,7 @@ def main():
 
     # 3. Tworzymy powłokę wyspy
     island = FloatingIsland()
+    island.setWindowIcon(app_icon)
 
     # 4. Inicjalizujemy uniwersalny moduł multimediów, półki i skrótów
     media_module = MediaModule()

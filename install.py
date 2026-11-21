@@ -7,8 +7,6 @@ Uruchom raz: python install.py
 """
 import os
 import sys
-import struct
-import ctypes
 import winreg
 
 # --- Sciezki ------------------------------------------------------------------
@@ -25,95 +23,13 @@ if not os.path.isfile(PYTHONW_EXE):
     PYTHONW_EXE = PYTHON_EXE   # fallback
 
 
-# --- Generowanie ikony .ico wektorowo (bez Pillow) ----------------------------
+# --- Generowanie wspólnej ikony aplikacji ------------------------------------
 def _make_ico() -> bool:
-    """
-    Tworzy minimalistyczną ikonę 32x32 i 16x16 jako plik .ico (format BMP/ICO).
-    Czarna pigulka z bialymi kropkami - rysowana czystymi bajtami, zero bibliotek zewnetrznych.
-    """
     try:
-        import struct as st
-
-        def make_bmp_32x32():
-            w, h = 32, 32
-            # BITMAPINFOHEADER (40 bajtow)
-            bih = st.pack('<lllHHIIllII',
-                40, w, h*2, 1, 32, 0, 0, 0, 0, 0, 0)
-
-            pixels = []
-            cx, cy = w / 2.0, h / 2.0
-            pill_rx, pill_ry = 14.0, 7.0  # pół-osie pigułki (owalny ksztalt)
-
-            for row in range(h - 1, -1, -1):
-                for col in range(w):
-                    px = col - cx
-                    py = row - cy
-                    # Sprawdzenie czy punkt lezy w owalnym ksztalcie (elipsa)
-                    inside = (px / pill_rx) ** 2 + (py / pill_ry) ** 2 <= 1.0
-                    if inside:
-                        # Wewnatrz pigulki - prawie-czarny (#0E0E10)
-                        pixels.append(st.pack('<BBBB', 16, 14, 14, 255))
-                        # Dwie biale kropki (oczy)
-                        # Lewe oko: col ~11, row ~16-18
-                        # Prawe oko: col ~20, row ~16-18
-                        lx1, lx2 = 10, 13
-                        rx1, rx2 = 19, 22
-                        ey1, ey2 = 13, 18  # wiersz (odwrocony: 32-18=14 do 32-13=19 → row 14..19)
-                        if (lx1 <= col <= lx2 or rx1 <= col <= rx2) and ey1 <= row <= ey2:
-                            pixels[-1] = st.pack('<BBBB', 255, 255, 255, 255)
-                    else:
-                        pixels.append(st.pack('<BBBB', 0, 0, 0, 0))  # Przezroczysty
-
-            xor_mask = b''.join(pixels)
-            and_mask = bytes([0x00] * (w // 8 * h))  # Pelna przezroczystosc
-            return bih + xor_mask + and_mask
-
-        def make_bmp_16x16():
-            w, h = 16, 16
-            bih = st.pack('<lllHHIIllII',
-                40, w, h*2, 1, 32, 0, 0, 0, 0, 0, 0)
-            pixels = []
-            cx, cy = w / 2.0, h / 2.0
-            pill_rx, pill_ry = 7.0, 3.5
-
-            for row in range(h - 1, -1, -1):
-                for col in range(w):
-                    px = col - cx
-                    py = row - cy
-                    inside = (px / pill_rx) ** 2 + (py / pill_ry) ** 2 <= 1.0
-                    if inside:
-                        pixels.append(st.pack('<BBBB', 16, 14, 14, 255))
-                        if (4 <= col <= 6 or 9 <= col <= 11) and 6 <= row <= 9:
-                            pixels[-1] = st.pack('<BBBB', 255, 255, 255, 255)
-                    else:
-                        pixels.append(st.pack('<BBBB', 0, 0, 0, 0))
-
-            xor_mask = b''.join(pixels)
-            and_mask = bytes([0x00] * (w // 8 * h))
-            return bih + xor_mask + and_mask
-
-        bmp32 = make_bmp_32x32()
-        bmp16 = make_bmp_16x16()
-
-        # Naglowek ICO: 2 obrazy
-        num_images = 2
-        header = st.pack('<HHH', 0, 1, num_images)
-
-        # Offset do danych: 6 (header) + 2*16 (directory entries)
-        offset1 = 6 + num_images * 16
-        offset2 = offset1 + len(bmp32)
-
-        # ICO Directory Entry: width, height, colorCount, reserved, planes, bitCount, size, offset
-        entry32 = st.pack('<BBBBHHII', 32, 32, 0, 0, 1, 32, len(bmp32), offset1)
-        entry16 = st.pack('<BBBBHHII', 16, 16, 0, 0, 1, 32, len(bmp16), offset2)
-
-        ico_data = header + entry32 + entry16 + bmp32 + bmp16
-
-        with open(ICON_PATH, 'wb') as f:
-            f.write(ico_data)
-        return True
-    except Exception as e:
-        print(f"  [!] Nie udalo sie stworzyc ikony: {e}")
+        from core.app_icon import save_app_icon_ico
+        return save_app_icon_ico(ICON_PATH)
+    except Exception as error:
+        print(f"  [!] Nie udalo sie stworzyc ikony: {error}")
         return False
 
 

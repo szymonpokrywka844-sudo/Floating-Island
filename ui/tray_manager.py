@@ -2,34 +2,17 @@
 Menedżer ikony w zasobniku systemowym (Windows System Tray)
 oraz menu kontekstowego (PPM) z opcją autostartu i kontroli wyspy.
 """
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction
+from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 
 from core.autostart import is_autostart_enabled, set_autostart
+from core.app_icon import create_app_icon
 from modules.dropshelf import shelf_manager
 
 
 def create_tray_icon() -> QIcon:
-    """Tworzy wektorową, minimalistyczną ikonę pigułki dla zasobnika Windows."""
-    pixmap = QPixmap(32, 32)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    # Czarna pigułka z białą obwódką
-    painter.setBrush(QColor(18, 18, 20))
-    painter.setPen(QColor(255, 255, 255, 220))
-    painter.drawRoundedRect(3, 10, 26, 12, 6, 6)
-
-    # Biała mała kropka w środku
-    painter.setBrush(QColor(255, 255, 255))
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.drawEllipse(13, 13, 6, 6)
-
-    painter.end()
-    return QIcon(pixmap)
+    """Use the same Floating Island mark as the window and Windows shortcut."""
+    return create_app_icon()
 
 
 def create_context_menu(island_widget) -> QMenu:

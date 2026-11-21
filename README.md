@@ -12,6 +12,8 @@ The app checks the public repository `szymonpokrywka844-sudo/Floating-Island` on
 
 Every push to `main` runs the Windows installer workflow. The generated setup executable is available as a workflow artifact for 30 days.
 
+When running from a Git checkout (for example, from an IDE), automatic updates are disabled so development files are not overwritten. Installed copies without a `.git` directory continue to update automatically.
+
 ## License
 
 Floating Island is proprietary software. The included license permits personal use of an unmodified copy obtained through the official installer or updater. Copying, modifying, redistributing, or creating derivative software requires prior written permission. This applies to original project materials; third-party components are governed by their own licenses.

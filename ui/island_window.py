@@ -243,6 +243,11 @@ class FloatingIsland(QWidget):
             if self.is_expanded:
                 window_rect = self.geometry().adjusted(-4, -4, 4, 4)
                 if not window_rect.contains(cursor_pos):
+                    # Native popup menus are separate top-level windows. Keep
+                    # the island expanded while its device menu is being used.
+                    popup = QApplication.activePopupWidget()
+                    if popup and popup.isVisible():
+                        return
                     self.collapse()
 
     def _migrate_to_screen(self, new_screen):

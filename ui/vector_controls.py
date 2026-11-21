@@ -5,15 +5,62 @@ Pełna kompatybilność z Windows: Lacze z telefonem, SMS, polaczenia, Discord, 
 """
 import math
 import random
-from PyQt6.QtCore import Qt, QTimer, QPointF, QRectF
-from PyQt6.QtGui import QPainter, QColor, QPainterPath, QBrush, QPen, QCursor
-from PyQt6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QLabel
+from PyQt6.QtCore import Qt, QTimer, QPointF, QRectF, pyqtSignal
+from PyQt6.QtGui import QPainter, QColor, QPainterPath, QBrush, QPen, QCursor, QFont
+from PyQt6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QLabel, QSlider
 
 
 # Import opózniony - unikamy cyklu importu przy uruchamianiu modulu
 def _get_theme_manager():
     from core.theme import theme_manager
     return theme_manager
+
+
+def island_scroll_area_style():
+    """Wspolny, waski styl paskow przewijania w panelach wyspy."""
+    return """
+        QScrollArea { border: none; background: transparent; }
+        QScrollBar:vertical {
+            background: transparent;
+            width: 7px;
+            margin: 2px 1px 2px 1px;
+            border: none;
+        }
+        QScrollBar::handle:vertical {
+            background: #48484D;
+            min-height: 24px;
+            border-radius: 3px;
+        }
+        QScrollBar::handle:vertical:hover { background: #68686E; }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+            height: 0;
+            border: none;
+            background: transparent;
+        }
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+            background: transparent;
+        }
+        QScrollBar:horizontal {
+            background: transparent;
+            height: 7px;
+            margin: 1px 2px;
+            border: none;
+        }
+        QScrollBar::handle:horizontal {
+            background: #48484D;
+            min-width: 24px;
+            border-radius: 3px;
+        }
+        QScrollBar::handle:horizontal:hover { background: #68686E; }
+        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+            width: 0;
+            border: none;
+            background: transparent;
+        }
+        QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+            background: transparent;
+        }
+    """
 
 
 class AppIconWidget(QWidget):
@@ -256,6 +303,157 @@ class VectorCloseButton(QPushButton):
         painter.drawLine(int(w - pad), int(pad), int(pad), int(h - pad))
 
 
+class IslandSlider(QSlider):
+    """Custom transparent slider shared by the media and settings views."""
+
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.setAutoFillBackground(False)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        theme = _get_theme_manager()
+        dark = theme.is_dark
+
+        track_color = QColor("#242427" if dark else "#D1D1D8")
+        fill_color = QColor("#515156" if dark else "#8A8A92")
+        handle_color = QColor("#E4E4E7" if dark else "#424248")
+
+        edge = 6.0
+        left = edge
+        right = max(left, float(self.width()) - edge)
+        center_y = self.height() / 2.0
+        track = QRectF(left, center_y - 2.0, max(1.0, right - left), 4.0)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(track_color)
+        painter.drawRoundedRect(track, 2.0, 2.0)
+
+        value_range = self.maximum() - self.minimum()
+        fraction = ((self.value() - self.minimum()) / value_range) if value_range > 0 else 0.0
+        handle_x = left + (right - left) * fraction
+        fill_width = max(0.0, handle_x - left)
+        if fill_width > 0:
+            painter.setBrush(fill_color)
+            painter.drawRoundedRect(QRectF(left, center_y - 2.0, fill_width, 4.0), 2.0, 2.0)
+
+        painter.setBrush(handle_color)
+        painter.drawEllipse(QPointF(handle_x, center_y), 5.0, 5.0)
+
+
+class BluetoothBatteryBadgeWidget(QWidget):
+    """Compact device icon and battery percentage for the collapsed island."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.devices = []
+        self.device_kind = "generic"
+        self.level = None
+        self._device_key = None
+        self._low_alert_sent = False
+        self._alert_active = False
+        self._alert_timer = QTimer(self)
+        self._alert_timer.setSingleShot(True)
+        self._alert_timer.setInterval(6000)
+        self._alert_timer.timeout.connect(self._finish_low_battery_alert)
+        self.setFixedSize(48, 20)
+        self.setVisible(False)
+
+    def set_devices(self, devices):
+        self.devices = list(devices or [])
+        self.setVisible(bool(self.devices))
+        if not self.devices:
+            self.level = None
+            self._device_key = None
+            self._low_alert_sent = False
+            self._alert_active = False
+            self._alert_timer.stop()
+            self.update()
+            return
+
+        device = self.devices[0]
+        device_key = str(device.get("name", "")).casefold()
+        if device_key != self._device_key:
+            self._device_key = device_key
+            self._low_alert_sent = False
+        name = str(device.get("name", "")).casefold()
+        if any(word in name for word in (
+            "headphone", "headset", "earbud", "earphone", "airpod", "buds", "bose", "wh-", "wf-", "jbl",
+            "philips", "soundcore", "anker", "beats", "sennheiser", "jabra", "freebuds", "enco", "tws",
+        )):
+            self.device_kind = "headphones"
+        elif any(word in name for word in ("watch", "fitbit", "garmin", "band", "wearable")):
+            self.device_kind = "watch"
+        elif any(word in name for word in ("phone", "iphone", "pixel", "mobile", "galaxy")):
+            self.device_kind = "phone"
+        else:
+            self.device_kind = "generic"
+
+        try:
+            self.level = max(0, min(100, int(device.get("battery"))))
+        except (TypeError, ValueError):
+            self.level = None
+
+        if self.level is None or self.level > 20:
+            self._low_alert_sent = False
+        elif not self._low_alert_sent:
+            self._low_alert_sent = True
+            self._alert_active = True
+            self._alert_timer.start()
+
+        self.setToolTip(f"{device.get('name', 'Urządzenie Bluetooth')} · {self.level}%")
+        self.update()
+
+    def _finish_low_battery_alert(self):
+        self._alert_active = False
+        self.update()
+
+    def paintEvent(self, event):
+        if self.level is None:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        theme = _get_theme_manager()
+        is_low = self.level <= 20
+        alert_color = QColor("#FF453A" if theme.is_dark else "#C62828")
+        if self._alert_active:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor("#3C2022" if theme.is_dark else "#FFE3E2"))
+            painter.drawRoundedRect(QRectF(0, 0, self.width(), self.height()), 8, 8)
+
+        color = alert_color if is_low else QColor(theme.text_secondary)
+        pen = QPen(color, 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        if self.device_kind == "headphones":
+            path = QPainterPath()
+            path.moveTo(3, 11)
+            path.cubicTo(3, 2, 15, 2, 15, 11)
+            painter.drawPath(path)
+            painter.drawRoundedRect(QRectF(2.5, 9, 3.2, 6), 1.2, 1.2)
+            painter.drawRoundedRect(QRectF(12.3, 9, 3.2, 6), 1.2, 1.2)
+        elif self.device_kind == "phone":
+            painter.drawRoundedRect(QRectF(5, 2.5, 9, 15), 2, 2)
+            painter.drawLine(QPointF(8, 4.5), QPointF(11, 4.5))
+            painter.drawEllipse(QPointF(9.5, 15.5), 0.6, 0.6)
+        elif self.device_kind == "watch":
+            painter.drawRoundedRect(QRectF(7, 1, 5, 4), 1.5, 1.5)
+            painter.drawRoundedRect(QRectF(5, 4, 9, 12), 2, 2)
+            painter.drawRoundedRect(QRectF(7, 15, 5, 4), 1.5, 1.5)
+        else:
+            painter.drawLine(QPointF(5, 3), QPointF(13, 10))
+            painter.drawLine(QPointF(13, 10), QPointF(5, 17))
+            painter.drawLine(QPointF(5, 3), QPointF(5, 17))
+            painter.drawLine(QPointF(5, 10), QPointF(14, 5))
+            painter.drawLine(QPointF(5, 10), QPointF(14, 15))
+
+        painter.setPen(alert_color if is_low else QColor(theme.text_primary))
+        painter.setFont(QFont("Segoe UI", 8, QFont.Weight.DemiBold))
+        painter.drawText(QRectF(19, 0, 29, 20), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, f"{self.level}%")
+
 class ShelfBadgeWidget(QFrame if False else QWidget):
     """
     Autorski wektorowy badge na pigułce informujący o plikach na półce (np. [ [tacka] 2 ]).
@@ -337,7 +535,7 @@ class LivingEyesWidget(QWidget):
     def __init__(self, size: str = "small", parent=None):
         super().__init__(parent)
         self.size_mode = size
-        self.dot_color = QColor("#FFFFFF")
+        self.dot_color = QColor(_get_theme_manager().eyes_color)
 
         if size == "small":
             self.setFixedSize(26, 20)
@@ -362,16 +560,28 @@ class LivingEyesWidget(QWidget):
 
         self.blink_timer = QTimer(self)
         self.blink_timer.timeout.connect(self._trigger_blink)
-        self._schedule_next_blink()
 
         self.anim_timer = QTimer(self)
         self.anim_timer.timeout.connect(self._tick)
-        self.anim_timer.start(16)
 
         # Synchronizacja koloru z motywem
         tm = _get_theme_manager()
         self._sync_color(tm.effective_theme)
         tm.theme_changed.connect(self._sync_color)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self.anim_timer.isActive():
+            self.anim_timer.start(16)
+        if not self.blink_timer.isActive():
+            self._schedule_next_blink()
+
+    def hideEvent(self, event):
+        self.anim_timer.stop()
+        self.blink_timer.stop()
+        self.is_blinking = False
+        self.blink_progress = 0.0
+        super().hideEvent(event)
 
     def _sync_color(self, theme: str):
         """Ustawia kolor kropelek zgodny z biezacym motywem."""
@@ -380,6 +590,9 @@ class LivingEyesWidget(QWidget):
         self.update()
 
     def set_color(self, hex_color: str):
+        color = QColor(hex_color)
+        if color.isValid() and color.red() > 245 and color.green() > 245 and color.blue() > 245:
+            hex_color = _get_theme_manager().eyes_color
         self.dot_color = QColor(hex_color)
         self.update()
 
@@ -463,6 +676,7 @@ class WaveformVisualizer(QWidget):
         self.bar_gap = bar_gap
         self.is_playing = False
         self._custom_accent = False
+        self._requested_accent_color = None
         self.wave_color = QColor(_get_theme_manager().text_primary)
 
         self.current_heights = [3.0] * num_bars
@@ -475,7 +689,6 @@ class WaveformVisualizer(QWidget):
 
         self.anim_timer = QTimer(self)
         self.anim_timer.timeout.connect(self._tick)
-        self.anim_timer.start(16)
 
         total_w = num_bars * bar_width + (num_bars - 1) * bar_gap
         self.setFixedSize(total_w + 4, 22)
@@ -483,23 +696,44 @@ class WaveformVisualizer(QWidget):
 
         _get_theme_manager().theme_changed.connect(self._sync_theme)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self.anim_timer.isActive():
+            self.anim_timer.start(16)
+
+    def hideEvent(self, event):
+        self.anim_timer.stop()
+        super().hideEvent(event)
+
     def _sync_theme(self, theme: str):
-        if not self._custom_accent:
-            self.wave_color = QColor(_get_theme_manager().text_primary)
-            self.update()
+        tm = _get_theme_manager()
+        self.wave_color = QColor(
+            self._resolve_accent_color(self._requested_accent_color)
+            if self._custom_accent else tm.text_primary
+        )
+        self.update()
+
+    @staticmethod
+    def _resolve_accent_color(hex_color):
+        tm = _get_theme_manager()
+        if not hex_color:
+            return tm.text_primary
+        color = QColor(hex_color)
+        if color.isValid() and color.red() > 245 and color.green() > 245 and color.blue() > 245:
+            return tm.text_primary
+        return hex_color
 
     def set_playing(self, playing: bool):
         self.is_playing = playing
         if not playing:
             self._custom_accent = False
+            self._requested_accent_color = None
             self.wave_color = QColor(_get_theme_manager().text_primary)
             self.update()
 
     def set_accent_color(self, hex_color: str):
-        tm = _get_theme_manager()
-        if hex_color.upper() in ("#FFFFFF", "#FFF") and not tm.is_dark:
-            hex_color = tm.text_primary
-        self.wave_color = QColor(hex_color)
+        self._requested_accent_color = hex_color
+        self.wave_color = QColor(self._resolve_accent_color(hex_color))
         self._custom_accent = True
         self.update()
 
@@ -833,43 +1067,49 @@ class VectorGearButton(QPushButton):
         h = self.height()
         cx = w / 2.0
         cy = h / 2.0
-        r_outer = min(w, h) * 0.42
-        r_inner = r_outer * 0.48
+        r_outer = min(w, h) * 0.39
+        r_root = r_outer * 0.70
+        r_inner = r_outer * 0.31
 
         tm = _get_theme_manager()
         is_dark = tm.is_dark
         is_active = bool(self.property("active"))
 
         if is_active or self.is_hovered:
-            color = QColor(255, 255, 255) if is_dark else QColor(26, 26, 28)
-            bg_c = QColor(255, 255, 255, 24) if is_dark else QColor(0, 0, 0, 20)
-            bg_path = QPainterPath()
-            bg_path.addRoundedRect(1, 1, w - 2, h - 2, 4, 4)
-            painter.fillPath(bg_path, bg_c)
+            color = QColor(tm.accent_color)
+            bg_c = QColor(255, 255, 255, 20) if is_dark else QColor(0, 0, 0, 16)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(bg_c)
+            painter.drawEllipse(QRectF(1, 1, w - 2, h - 2))
         else:
             color = QColor(142, 142, 147) if is_dark else QColor(108, 108, 112)
 
-        # Wektorowe zęby zębatki (6 ząbków)
-        num_teeth = 6
-        pen = QPen(color, max(1.8, w * 0.12), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
-        painter.setPen(pen)
-
-        for i in range(num_teeth):
-            angle = i * (2 * math.pi / num_teeth)
-            x1 = cx + math.cos(angle) * (r_outer * 0.6)
-            y1 = cy + math.sin(angle) * (r_outer * 0.6)
-            x2 = cx + math.cos(angle) * r_outer
-            y2 = cy + math.sin(angle) * r_outer
-            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
-
-        # Zewnętrzny pierścień
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(QRectF(cx - r_outer * 0.72, cy - r_outer * 0.72, r_outer * 1.44, r_outer * 1.44))
-
-        # Wewnętrzny otwór
-        painter.setBrush(QBrush(color))
+        # Smooth 8-tooth gear with a true cutout, scaled to remain legible at 20 px.
+        teeth = 8
+        gear = QPainterPath()
+        for index in range(teeth):
+            center_angle = index * (2 * math.pi / teeth)
+            points = (
+                (-math.pi / teeth, r_root),
+                (-math.pi / teeth * 0.62, r_root),
+                (-math.pi / teeth * 0.48, r_outer),
+                ( math.pi / teeth * 0.48, r_outer),
+                ( math.pi / teeth * 0.62, r_root),
+                ( math.pi / teeth, r_root),
+            )
+            for offset, radius in points:
+                angle = center_angle + offset
+                point = QPointF(cx + math.cos(angle) * radius, cy + math.sin(angle) * radius)
+                if index == 0 and offset == points[0][0]:
+                    gear.moveTo(point)
+                else:
+                    gear.lineTo(point)
+        gear.closeSubpath()
+        gear.addEllipse(QRectF(cx - r_inner, cy - r_inner, r_inner * 2, r_inner * 2))
+        gear.setFillRule(Qt.FillRule.OddEvenFill)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(QRectF(cx - r_inner * 0.5, cy - r_inner * 0.5, r_inner, r_inner))
+        painter.setBrush(color)
+        painter.drawPath(gear)
 
 
 class VectorToggleSwitch(QPushButton):

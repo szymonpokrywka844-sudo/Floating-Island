@@ -6,14 +6,13 @@ Wszystkie ikony rysowane QPainter - zero emotek, zero obrazkow.
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QSlider, QScrollArea, QFrame
+    QPushButton, QScrollArea, QFrame
 )
-from PyQt6.QtGui import QPainter, QColor
 
 from core.theme import theme_manager
 from core import config
 from core.autostart import is_autostart_enabled, set_autostart
-from ui.vector_controls import VectorToggleSwitch
+from ui.vector_controls import IslandSlider, VectorToggleSwitch, island_scroll_area_style
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +116,7 @@ class SettingsPage(QWidget):
         # Glowny scroll
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        scroll.setStyleSheet(island_scroll_area_style())
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
@@ -226,11 +225,10 @@ class SettingsPage(QWidget):
 
         saved_offset = int(self._settings.value("top_offset", config.TOP_OFFSET))
 
-        self._offset_slider = QSlider(Qt.Orientation.Horizontal)
+        self._offset_slider = IslandSlider(Qt.Orientation.Horizontal)
         self._offset_slider.setMinimum(4)
         self._offset_slider.setMaximum(40)
         self._offset_slider.setValue(saved_offset)
-        self._offset_slider.setStyleSheet(self._slider_style())
         self._offset_slider.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self._offset_val_label = QLabel(f"{saved_offset} px")
@@ -254,11 +252,10 @@ class SettingsPage(QWidget):
 
         saved_opacity = int(self._settings.value("bg_opacity", 248))
 
-        self._opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self._opacity_slider = IslandSlider(Qt.Orientation.Horizontal)
         self._opacity_slider.setMinimum(80)
         self._opacity_slider.setMaximum(255)
         self._opacity_slider.setValue(saved_opacity)
-        self._opacity_slider.setStyleSheet(self._slider_style())
         self._opacity_slider.setCursor(Qt.CursorShape.PointingHandCursor)
 
         pct = int((saved_opacity / 255) * 100)
@@ -326,6 +323,14 @@ class SettingsPage(QWidget):
             self._updater.update_available.connect(self._on_update_available)
             self._updater.update_status.connect(self._set_update_status)
             self._updater.update_completed.connect(self._on_update_completed)
+            if not self._updater.enabled:
+                self._check_updates_button.setEnabled(False)
+                self._check_updates_button.setToolTip(
+                    "Aktualizacje są wyłączone w lokalnej kopii developerskiej."
+                )
+                self._set_update_status(
+                    "Aktualizacje wyłączone w IDE; wersja z instalatora aktualizuje się automatycznie."
+                )
 
     def _check_for_updates(self):
         if not self._updater:
@@ -487,11 +492,10 @@ class SettingsPage(QWidget):
         if hasattr(self, '_autostart_desc') and self._autostart_desc:
             self._autostart_desc.setStyleSheet(f"color: {text_pri}; font-size: 11px;")
 
-        slider_css = self._slider_style()
         if hasattr(self, '_offset_slider') and self._offset_slider:
-            self._offset_slider.setStyleSheet(slider_css)
+            self._offset_slider.update()
         if hasattr(self, '_opacity_slider') and self._opacity_slider:
-            self._opacity_slider.setStyleSheet(slider_css)
+            self._opacity_slider.update()
 
         self._refresh_reset_btn_style()
 
@@ -514,29 +518,3 @@ class SettingsPage(QWidget):
     # ------------------------------------------------------------------
     # Style pomoc
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _slider_style() -> str:
-        is_dark = theme_manager.is_dark
-        groove_bg = "#3A3A3C" if is_dark else "#D1D1D8"
-        handle_bg = "#FFFFFF" if is_dark else "#1A1A1C"
-        subpage_bg = "#0A84FF" if is_dark else "#007AFF"
-        return f"""
-            QSlider::groove:horizontal {{
-                height: 4px;
-                background: {groove_bg};
-                border-radius: 2px;
-            }}
-            QSlider::handle:horizontal {{
-                width: 14px;
-                height: 14px;
-                margin: -5px 0;
-                background: {handle_bg};
-                border-radius: 7px;
-                border: none;
-            }}
-            QSlider::sub-page:horizontal {{
-                background: {subpage_bg};
-                border-radius: 2px;
-            }}
-        """

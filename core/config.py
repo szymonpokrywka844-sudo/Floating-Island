@@ -9,7 +9,7 @@ COLLAPSED_HEIGHT = 36
 
 # --- Wymiary rozwiniętej wyspy (Island) ---
 EXPANDED_WIDTH = 420
-EXPANDED_HEIGHT = 135
+EXPANDED_HEIGHT = 185
 
 # --- Pozycja ---
 TOP_OFFSET = 12  # Dystans od górnej krawędzi ekranu w pikselach
